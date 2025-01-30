@@ -1,0 +1,21 @@
+name: accentflow
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - ffmpeg
+  - torchaudio
+  - cudatoolkit=11.3  # Adjust based on your GPU compatibility
+  - pip:
+      - streamlit
+      - torch
+      - torchvision
+      - torchaudio
+      - transformers
+      - langchain
+      - langchain-community
+      - pydub
+      - ffmpeg-python
+      - dotenv
