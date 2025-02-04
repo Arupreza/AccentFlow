@@ -2,19 +2,12 @@ import os
 import torch
 from dotenv import load_dotenv
 from transformers import pipeline, AutoTokenizer
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain_community.llms import HuggingFacePipeline
 from pydub import AudioSegment
 import re
 import difflib
 
 # Load environment variables
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
-LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # Define paths dynamically
@@ -27,17 +20,15 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
 
 # Load Grammar Correction Model
-model_name = "grammarly/coedit-large"
+model_name = "vennify/t5-base-grammar-correction"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, token=HF_TOKEN)
 grammar_model = pipeline("text2text-generation", model=model_name, tokenizer=tokenizer)
-llm = HuggingFacePipeline(pipeline=grammar_model)
 
-# LangChain Prompt Template
-prompt = PromptTemplate(
-    input_variables=["text"],
-    template="Correct the grammar of the following text: {text}"
-)
-chain = LLMChain(llm=llm, prompt=prompt)
+def correct_text(text):
+    """
+    Use the grammar correction model directly.
+    """
+    return grammar_model(text)[0]['generated_text']
 
 def remove_redundant_text(text):
     """
@@ -109,7 +100,7 @@ def correct_grammar_in_subtitles(subtitle_file, incorrect_paragraph_file, correc
     for line in lines:
         if "-->" not in line and line.strip().isdigit() is False:
             incorrect_text.append(line.strip())
-            corrected_text_line = chain.run(text=line.strip())
+            corrected_text_line = correct_text(line.strip())
             cleaned_text_line = remove_redundant_text(corrected_text_line)
             corrected_text.append(cleaned_text_line)
     
@@ -121,7 +112,7 @@ def correct_grammar_in_subtitles(subtitle_file, incorrect_paragraph_file, correc
 
 def highlight_corrections(original, corrected):
     """
-    Highlight corrections in the corrected paragraph using Streamlit markdown.
+    Highlight corrections in the corrected paragraph using HTML formatting.
     """
     diff = difflib.ndiff(original.split(), corrected.split())
     highlighted_text = " ".join(
