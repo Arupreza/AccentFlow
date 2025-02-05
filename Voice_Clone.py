@@ -1,40 +1,49 @@
 import os
 import torch
+import pysrt
+import pandas as pd
 from TTS.api import TTS
-from TTS.trainer import Trainer, TrainingArgs
 
 # Ensure GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Download and load the pre-trained lightweight model
-tts_model = "tts_models/en/ljspeech/tacotron2-DDC"
-tts = TTS(tts_model).to(device)
+# Define dataset path using saved_output/extracted_audio_segments
+dataset_path = "saved_output/extracted_audio_segments"  # Adjust to actual dataset directory
+srt_file_path = os.path.join(dataset_path, "transcribed_subtitles.srt")  # Adjust if filename differs
+metadata_path = os.path.join(dataset_path, "metadata.csv")
+config_path = os.path.join(dataset_path, "config.json")  # Path to model configuration
 
-# Define dataset path (Ensure your dataset is structured properly)
-dataset_path = "dataset"  # Folder containing metadata.csv and wavs/
+# Ensure metadata.csv is generated for training
+os.makedirs(dataset_path, exist_ok=True)
 
-# Define training parameters
-training_args = TrainingArgs(
-    restore_path=None,  # Set None to start fresh or specify a pre-trained model checkpoint
-    output_path="fine_tuned_model",  # Where to save fine-tuned model
-    dataset_path=dataset_path,  # Path to your dataset
-    config_path=tts.config_path,  # Use default config
-    batch_size=16,  # Adjust based on available GPU memory
-    num_epochs=50,  # Number of epochs
-    use_cuda=(device == "cuda"),  # Enable CUDA if available
-)
+# Parse the .srt file and extract text
+if os.path.exists(srt_file_path):
+    subs = pysrt.open(srt_file_path)
+    srt_data = {f"segment_{i+1}.wav": sub.text.replace('\n', ' ') for i, sub in enumerate(subs)}
 
-# Initialize trainer and start training
-trainer = Trainer(training_args)
-trainer.fit()
+    with open(metadata_path, "w") as f:
+        for audio_file, text in srt_data.items():
+            f.write(f"{audio_file}|{text}\n")
 
-# Save the fine-tuned model
-fine_tuned_model_path = "fine_tuned_model/my_finetuned_tts.pth"
-torch.save(trainer.model.state_dict(), fine_tuned_model_path)
-print(f"Fine-tuned model saved successfully at {fine_tuned_model_path}")
+    # Display dataset information
+    df = pd.DataFrame(list(srt_data.items()), columns=["Audio File", "Text"])
+    print("Dataset Overview:")
+    print(df.head())
+else:
+    print(f"Subtitle file {srt_file_path} not found!")
+
+# Ensure model configuration exists
+if not os.path.exists(config_path):
+    print(f"Configuration file not found at {config_path}. Please ensure the correct config.json is available.")
+    exit(1)
+
+# Train the model using Coqui TTS Python API
+train_command = f"python -m TTS.bin.train --config_path {config_path} --output_path fine_tuned_model --dataset_path {dataset_path} --epochs 50 --early_stopping True"
+os.system(train_command)
 
 # Load the fine-tuned model for inference
-tts.load_checkpoint(fine_tuned_model_path)
+fine_tuned_model_path = "fine_tuned_model/best_model.pth"
+tts = TTS(model_path=fine_tuned_model_path, config_path=config_path).to(device)
 
 # Convert text to speech using fine-tuned model
 text_to_speak = "This is a test using my fine-tuned model."
