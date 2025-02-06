@@ -1,7 +1,7 @@
 import os
 import torch
 import streamlit as st
-from Assets_Text import transcribe_video, format_srt, extract_audio_segments, correct_grammar_in_subtitles, highlight_corrections
+from Assets_Text import transcribe_video, format_srt, extract_audio_segments, correct_grammar_in_subtitles, highlight_corrections, text_to_speech
 
 # Define paths dynamically
 OUTPUT_DIR = "saved_output"
@@ -46,3 +46,18 @@ if uploaded_file:
     st.markdown(highlight_corrections(incorrect_text, corrected_text), unsafe_allow_html=True)
     
     st.success("Processing completed!")
+    
+    # Voice Generation Section
+    st.subheader("Generate Voice from Corrected Text")
+    voice_option = st.radio("Choose Voice:", ("Male", "Female"))
+    
+    if st.button("Generate Voice"):
+        with open(CORRECTED_PARAGRAPH_FILE, "r", encoding="utf-8") as f:
+            corrected_text = f.read()
+        
+        gender = "male" if voice_option == "Male" else "female"
+        filename = os.path.join(OUTPUT_DIR, "corrected_voice.mp3")
+        text_to_speech(corrected_text, filename, gender)
+        
+        st.audio(filename, format="audio/mp3")
+        st.success("Voice generation completed!")
