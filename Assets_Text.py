@@ -5,6 +5,8 @@ from transformers import pipeline, AutoTokenizer
 from pydub import AudioSegment
 import re
 import difflib
+import asyncio
+import edge_tts
 
 # Load environment variables
 load_dotenv()
@@ -120,3 +122,23 @@ def highlight_corrections(original, corrected):
          for word in diff if not word.startswith("- ")]
     )
     return highlighted_text
+
+def text_to_speech(text, filename="output.mp3", gender="male"):
+    async def generate_speech():
+        try:
+            voice = "en-GB-RyanNeural" if gender == "male" else "en-GB-SoniaNeural"
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(filename)
+            print(f"Audio file saved as {filename}")
+        except Exception as e:
+            print("Error:", e)
+    
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    
+    if loop and loop.is_running():
+        return asyncio.ensure_future(generate_speech())
+    else:
+        return asyncio.run(generate_speech())
