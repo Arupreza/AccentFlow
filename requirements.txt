@@ -1,0 +1,7 @@
+transformers==4.38.2
+torch==2.1.0
+python-dotenv==0.21.1
+pydub==0.25.1
+edge-tts
+streamlit==1.21.0
+diff-match-patch==20230430
