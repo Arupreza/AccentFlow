@@ -4,6 +4,4 @@ In this project, users upload a video file, and the app first extracts and trans
 
 ---
 
-## 📂 Project Structure
 
-. ├── Assets_Text.py ├── requirements.txt ├── Streamlit_App.py ├── saved_output/ │ ├── extracted_audio_segments/ │ ├── transcribed_subtitles.srt │ ├── incorrect_paragraph.txt │ ├── corrected_paragraph.txt │ ├── full_audio.wav │ ├── trimmed_ref.wav │ └── output.wav └── .env
