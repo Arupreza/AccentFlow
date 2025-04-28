@@ -7,6 +7,8 @@ import re
 import difflib
 import asyncio
 import edge_tts
+from pydub import AudioSegment
+from TTS.api import TTS
 
 # Load environment variables
 load_dotenv()
@@ -123,22 +125,46 @@ def highlight_corrections(original, corrected):
     )
     return highlighted_text
 
-def text_to_speech(text, filename="output.mp3", gender="male"):
-    async def generate_speech():
-        try:
-            voice = "en-GB-RyanNeural" if gender == "male" else "en-GB-SoniaNeural"
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(filename)
-            print(f"Audio file saved as {filename}")
-        except Exception as e:
-            print("Error:", e)
-    
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    
-    if loop and loop.is_running():
-        return asyncio.ensure_future(generate_speech())
-    else:
-        return asyncio.run(generate_speech())
+def trim_reference(input_path: str, output_path: str, duration_s: int = 5):
+    """
+    Trim the first `duration_s` seconds from input_path and write to output_path.
+    """
+    audio = AudioSegment.from_wav(input_path)
+    snippet = audio[: duration_s * 1000]  # first N seconds in milliseconds
+    snippet.export(output_path, format="wav")
+    print(f"🔪 Trimmed {duration_s}s reference saved to: {output_path}")
+
+def main():
+    # directory where your files live
+    base_dir   = "/media/arupreza/Assets/AccentFlow_App_0.0/AccentFlow/saved_output"
+    long_wav   = os.path.join(base_dir, "full_audio.wav")
+    ref_wav    = os.path.join(base_dir, "trimmed_ref.wav")
+    output_wav = os.path.join(base_dir, "output.wav")
+    text_file  = os.path.join(base_dir, "corrected_paragraph.txt")
+
+    # 0) load your TTS input from file
+    with open(text_file, "r", encoding="utf-8") as f:
+        tts_input = f.read().strip()
+
+    # 1) Trim the first 5 seconds as reference
+    trim_reference(long_wav, ref_wav, duration_s=5)
+
+    # 2) Load the XTTS-v2 model
+    model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
+    device     = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"🚀 Loading {model_name} on {device}…")
+    tts = TTS(model_name, gpu=(device == "cuda"))
+
+    # 3) Synthesize speech using that 5s reference and your text file
+    print("🎤 Synthesizing speech...")
+    tts.tts_to_file(
+        text=tts_input,
+        speaker_wav=[ref_wav],
+        language="en",
+        file_path=output_wav
+    )
+
+    print(f"✅ Done! Output saved to: {output_wav}")
+
+if __name__ == "__main__":
+    main()
