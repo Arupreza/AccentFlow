@@ -6,3 +6,4 @@ In this project, users upload a video file, and the app first extracts and trans
 
 ## 📂 Project Structure
 
+. ├── Assets_Text.py # Utility functions: ASR, formatting, correction, highlighting ├── requirements.txt # Python dependencies ├── Streamlit_App.py # Main Streamlit application ├── saved_output/ # Auto-generated transcripts, audio & TTS outputs │ ├── extracted_audio_segments/ # Audio clips for each subtitle │ ├── transcribed_subtitles.srt # Raw transcription (SRT format) │ ├── incorrect_paragraph.txt # Original, uncorrected text │ ├── corrected_paragraph.txt # Corrected text after grammar fixing │ ├── full_audio.wav # Full extracted audio from uploaded video │ ├── trimmed_ref.wav # 5-second trimmed reference audio for voice cloning │ └── output.wav # Final synthesized voice output └── .env # Environment variables (e.g., Hugging Face token, not committed)
