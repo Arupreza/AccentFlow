@@ -1,7 +1,11 @@
 ## 📖 Project Overview
 
-In this project, users upload a video file, and the app first extracts and transcribes the audio using OpenAI’s Whisper model. The raw transcription is then corrected using a T5-based grammar correction model to improve grammar, spelling, and fluency, while also highlighting the changes compared to the original text. A 5-second audio clip from the uploaded video is trimmed to serve as a voice reference. Using the XTTS-v2 model from Coqui, the app performs voice cloning to synthesize the corrected text into natural-sounding speech that matches the original speaker’s voice. Finally, the generated voice audio is made available for playback directly within the app, completing an end-to-end process of transcription, grammar enhancement, and speaker-adapted text-to-speech synthesis.
+In this project presents a turnkey Streamlit web application that exposes the entire speech‑processing and re‑synchronisation stack—audio extraction, chunking, automatic speech recognition (ASR), grammatical error correction (GEC), cross‑lingual text‑to‑speech (TTS), and automatic lip‑sync regeneration—through a single interactive dashboard. Users can upload any video, adjust segment duration, provide an optional Hugging Face token, monitor colour‑coded progress bars and live logs, and download every intermediate artefact: the full WAV track, per‑segment clips, SRT subtitles, raw and corrected transcripts, cloned‑voice WAV output, and the final lip‑synced MP4. Under the hood the app orchestrates Pydub for audio handling, OpenAI Whisper‑medium for ASR, a fine‑tuned T5‑base GEC model, and Coqui XTTS‑v2 for zero‑shot speaker cloning, with all models cached by Streamlit’s resource manager and GPU‑accelerated when available. Once the corrected speech is synthesised, ByteDance LatentSync‑1.5 re‑aligns the speaker’s mouth movements in the original video to the updated audio track, producing frame‑accurate lip‑sync.
 
+<!-- Image goes here -->
+<img src="Assets/diagram.png" width="400">
+
+Python: 3.10
 CUDA: conda install pytorch==2.1.0 torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 ---
 
