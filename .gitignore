@@ -1,4 +1,4 @@
 .env
-/saved_output
-__pycache__/
-
+acc_env
+Assets
+LatentSync

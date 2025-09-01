@@ -5,8 +5,11 @@ In this project presents a turnkey Streamlit web application that exposes the en
 <!-- Image goes here -->
 <img src="Assets/Diagram.png" width="800">
 
+## Output WAV Sample
+
+<audio src="Assets/generated_speech.wav" controls></audio>
+
 Python: 3.10
+##
 CUDA: conda install pytorch==2.1.0 torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 ---
-
-
