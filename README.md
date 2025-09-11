@@ -5,6 +5,11 @@ In this project presents a turnkey Streamlit web application that exposes the en
 <!-- Image goes here -->
 <img src="Assets/Diagram.png" width="800">
 
+<img src="Assets/Page_1.png" width="800">
+<img src="Assets/Page_2.png" width="800">
+<img src="Assets/Page_3.png" width="800">
+<img src="Assets/Page_4.png" width="800">
+
 ## Output WAV Sample
 
 <audio src="Assets/generated_speech.wav" controls></audio>
