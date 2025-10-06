@@ -14,7 +14,6 @@ The system integrates **automatic speech recognition**, **grammatical error corr
 <img src="Assets/Page_1.png" width="500">
 <img src="Assets/Page_2.png" width="500">
 <img src="Assets/Page_3.png" width="500">
-<img src="Assets/Page_4.png" width="500">
 
 ---
 
