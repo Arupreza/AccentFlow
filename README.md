@@ -9,11 +9,11 @@ A production-ready Python application for **speech correction and video re-synch
 AccentFlow provides a **turnkey web interface** to automatically extract, correct, and re-synthesize speech from videos — and then re-align lip movements to the corrected audio.
 The system integrates **automatic speech recognition**, **grammatical error correction**, **voice cloning**, and **lip-sync restoration** into a single streamlined workflow.
 
-<img src="Assets/Diagram.png" width="500">
+<img src="Assets/Diagram.png" width="600">
 
-<img src="Assets/Page_1.png" width="500">
-<img src="Assets/Page_2.png" width="500">
-<img src="Assets/Page_3.png" width="500">
+<img src="Assets/Page_1.png" width="600">
+<img src="Assets/Page_2.png" width="600">
+<img src="Assets/Page_3.png" width="600">
 
 ---
 
