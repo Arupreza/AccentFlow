@@ -67,10 +67,6 @@ graph TD
 
 ```
 ACCENTFLOW/
-├── 📂 Assets/                        # Reference images and audio samples
-│   ├── Diagram.png
-│   ├── generated_speech.wav
-│   ├── Page_1.png ... Page_4.png
 ├── 📂 src/                           # Core source modules
 │   ├── asr.py                        # Whisper ASR transcription
 │   ├── audio_utils.py                # Audio extraction & chunking
