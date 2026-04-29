@@ -32,3 +32,6 @@ dependencies:
       - TTS==0.22.0
       - diff-match-patch==20230430
       - edge-tts>=2.2.2,<8.0.0
+      - langdetect>=1.0.9
+      - sentencepiece>=0.1.99
+      - sacremoses>=0.0.53
