@@ -1,78 +1,39 @@
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel AS builder
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=private \
-    apt-get update && apt-get install -y --no-install-recommends \
-        git build-essential cmake \
-        portaudio19-dev   # <-- fixes pyaudio: provides portaudio.h
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
-ARG FISHSPEECH_SHA=main
-RUN git clone https://github.com/fishaudio/fish-speech.git /opt/fish-speech \
-    && cd /opt/fish-speech \
-    && git checkout ${FISHSPEECH_SHA}
+# System deps
+RUN apt-get update && apt-get install -y \
+    python3.11 python3.11-dev python3-pip \
+    git git-lfs curl ffmpeg portaudio19-dev \
+    && git lfs install \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/fish-speech
+# Use python3.11 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install \
-        "transformers>=4.40.0,<=4.57.3" \
-        "tokenizers>=0.19.0" \
-    && pip install -e . "huggingface_hub[cli]>=0.22"
+WORKDIR /app
 
+# Clone fish-speech
+RUN git clone https://github.com/fishaudio/fish-speech.git
+WORKDIR /app/fish-speech
 
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime AS runtime
+# Install torch nightly for cu128 (2.8 not on stable index)
+RUN pip install --pre torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/nightly/cu128
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# Install fish-speech deps (non-editable to avoid PEP 660 issue)
+RUN pip install .
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=private \
-    apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg libsndfile1 \
-        portaudio19-dev   # <-- needed at runtime too if pyaudio is used
+# Install FastAPI server deps
+RUN pip install fastapi uvicorn python-multipart
 
-RUN useradd -m -u 1000 appuser
+# Copy API server to /app
+COPY server.py /app/server.py
 
-RUN mkdir -p /data/input /data/output /data/checkpoints \
-    && chown -R appuser:appuser /data
-
-COPY --from=builder /opt/conda /opt/conda
-COPY --from=builder /opt/fish-speech /home/appuser/fish-speech
-COPY entrypoint.fish.sh /home/appuser/fish-speech/entrypoint.sh
-
-RUN chmod +x /home/appuser/fish-speech/entrypoint.sh
-
-USER appuser
-WORKDIR /home/appuser/fish-speech
-
-VOLUME ["/data/input", "/data/output", "/data/checkpoints"]
-
-ENTRYPOINT ["/home/appuser/fish-speech/entrypoint.sh"]
-
-#docker build -f Dockerfile.FishSpeech -t fishspeech-env .
-
-
-# mkdir -p checkpoints inputs outputs
-
-# pip install huggingface_hub[cli]   # if not already installed
-
-# huggingface-cli download fishaudio/openaudio-s1-mini \
-#     --local-dir ./checkpoints/openaudio-s1-mini
-
-# docker run --gpus all \
-#     -v $(pwd)/outputs:/data/output \
-#     -v $(pwd)/checkpoints:/data/checkpoints \
-#     -e TEXT="Hello, this is a test." \
-#     fishspeech-env
-
-# cp /path/to/reference.wav inputs/
-
-# docker run --gpus all \
-#     -v $(pwd)/inputs:/data/input \
-#     -v $(pwd)/outputs:/data/output \
-#     -v $(pwd)/checkpoints:/data/checkpoints \
-#     -e TEXT="Hello, this is a test." \
-#     -e REFERENCE_AUDIO=/data/input/reference.wav \
-#     -e REFERENCE_TEXT="transcript of reference audio" \
-#     -e COMPILE=1 \
-#     fishspeech-env
+# Run uvicorn from /app so it finds server.py as module
+WORKDIR /app
+EXPOSE 8080
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]

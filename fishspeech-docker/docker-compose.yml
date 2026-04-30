@@ -1,0 +1,19 @@
+services:
+  fish-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.FishSpeech
+    container_name: fish-tts
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models/s2-pro:/app/fish-speech/models/s2-pro
+      - ./outputs:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
