@@ -33,7 +33,7 @@ def correct(req: GrammarRequest):
 
 @app.post("/check")
 def check(req: CheckerRequest):
-    return {"checked": checker.check(req.text)}
+    return checker.check(req.text)         # ← changed: returns dict directly
 
 
 @app.post("/translate")
@@ -45,17 +45,15 @@ def translate(req: TranslatorRequest):
 async def extract_audio(file: UploadFile = File(...)):
     """
     Input  : video file (uploaded)
-    Output : extracted audio (16kHz mono WAV) — returned as downloadable file
+    Output : extracted audio (16kHz mono WAV)
     """
     job_id     = str(uuid.uuid4())
     video_path = f"/app/storage/{job_id}.mp4"
     audio_path = f"/app/storage/{job_id}.wav"
 
-    # Save uploaded video
     with open(video_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Extract audio with ffmpeg
     subprocess.run([
         "ffmpeg", "-y", "-i", video_path,
         "-ar", "16000", "-ac", "1", "-vn", audio_path
