@@ -223,3 +223,4 @@ checkpoints/grammarly/
 checkpoints/latentsync/
 checkpoints/translator/
 checkpoints/whisper/
+storage/

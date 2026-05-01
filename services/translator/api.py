@@ -1,16 +1,13 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse
-from schemas import GrammarRequest, CheckerRequest, TranslatorRequest
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import FileResponse
+from schemas import TranscribeRequest, GrammarRequest, CheckerRequest, TranslatorRequest
 from models.whisper_model import WhisperModel
 from models.grammar_model import GrammarModel
 from models.checker_model import CheckerModel
 from models.translator_model import TranslatorModel
-import shutil, uuid, os
+import shutil, uuid, subprocess
 
 app = FastAPI()
-
-STORAGE_DIR = "/app/storage"
-os.makedirs(STORAGE_DIR, exist_ok=True)
 
 # Load all models once at startup
 whisper    = WhisperModel()
@@ -18,56 +15,54 @@ grammar    = GrammarModel()
 checker    = CheckerModel()
 translator = TranslatorModel()
 
-# ───────── Health ─────────
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# ───────── Text endpoints ─────────
+
+@app.post("/transcribe")
+def transcribe(req: TranscribeRequest):
+    return {"transcript": whisper.transcribe(req.audio_path)}
+
+
 @app.post("/correct")
 def correct(req: GrammarRequest):
     return {"corrected": grammar.correct(req.text)}
+
 
 @app.post("/check")
 def check(req: CheckerRequest):
     return {"checked": checker.check(req.text)}
 
+
 @app.post("/translate")
 def translate(req: TranslatorRequest):
     return {"translated": translator.translate(req.text, req.source_lang, req.target_lang)}
 
-# ───────── File upload helper ─────────
-def _save_upload(file: UploadFile) -> str:
-    ext = os.path.splitext(file.filename)[1]
-    saved_path = os.path.join(STORAGE_DIR, f"{uuid.uuid4()}{ext}")
-    with open(saved_path, "wb") as f:
+
+@app.post("/extract_audio")
+async def extract_audio(file: UploadFile = File(...)):
+    """
+    Input  : video file (uploaded)
+    Output : extracted audio (16kHz mono WAV) — returned as downloadable file
+    """
+    job_id     = str(uuid.uuid4())
+    video_path = f"/app/storage/{job_id}.mp4"
+    audio_path = f"/app/storage/{job_id}.wav"
+
+    # Save uploaded video
+    with open(video_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    return saved_path
 
-# ───────── File upload endpoints ─────────
-@app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
-    saved_path = _save_upload(file)
-    try:
-        transcript = whisper.transcribe(saved_path)
-        return {"transcript": transcript, "saved_as": saved_path}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    # Extract audio with ffmpeg
+    subprocess.run([
+        "ffmpeg", "-y", "-i", video_path,
+        "-ar", "16000", "-ac", "1", "-vn", audio_path
+    ], check=True, capture_output=True)
 
-@app.post("/pipeline")
-async def pipeline(file: UploadFile = File(...), target_lang: str = Form("kor_Hang")):
-    saved_path = _save_upload(file)
-    try:
-        transcript = whisper.transcribe(saved_path)
-        corrected  = grammar.correct(transcript)
-        checked    = checker.check(corrected)
-        translated = translator.translate(checked, "eng_Latn", target_lang)
-        return {
-            "saved_as"   : saved_path,
-            "transcript" : transcript,
-            "corrected"  : corrected,
-            "checked"    : checked,
-            "translated" : translated
-        }
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    return FileResponse(
+        audio_path,
+        media_type="audio/wav",
+        filename=f"{job_id}.wav"
+    )

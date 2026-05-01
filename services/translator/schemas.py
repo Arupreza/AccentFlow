@@ -1,5 +1,8 @@
 from pydantic import BaseModel
 
+class TranscribeRequest(BaseModel):
+    audio_path: str
+
 class GrammarRequest(BaseModel):
     text: str
 
