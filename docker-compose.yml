@@ -1,0 +1,60 @@
+services:
+
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8000:8000"
+    depends_on:
+      - translator
+      - fish_tts
+      - latentsync
+    volumes:
+      - ./storage:/app/storage
+
+  translator:
+    build: ./services/translator
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./checkpoints/whisper:/app/checkpoints/whisper
+      - ./checkpoints/grammarly:/app/checkpoints/grammarly
+      - ./checkpoints/checker:/app/checkpoints/checker
+      - ./checkpoints/translator:/app/checkpoints/translator
+      - ./storage:/app/storage
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  fish_tts:
+    build: ./services/fish_tts
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./checkpoints/fish_tts:/app/checkpoints
+      - ./storage:/app/storage
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  latentsync:
+    build: ./services/latentsync
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./checkpoints/latentsync:/app/checkpoints
+      - ./storage:/app/storage
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
