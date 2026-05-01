@@ -5,3 +5,4 @@ sentencepiece
 accelerate==0.34.2
 protobuf
 torchaudio
+python-multipart
