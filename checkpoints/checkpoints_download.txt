@@ -1,0 +1,30 @@
+#grammarly
+huggingface-cli download grammarly/coedit-large \
+  --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/grammarly \
+  --include "*.safetensors" "*.json" "*.txt" "*.model"
+
+#whisper
+huggingface-cli download openai/whisper-large-v3-turbo \
+  --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/whisper \
+  --include "*.safetensors" "*.json" "*.txt"
+
+#checker
+huggingface-cli download textattack/bert-base-uncased-CoLA \
+  --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/checker \
+  --include "*.bin" "*.safetensors" "*.json" "*.txt"
+
+#translator
+huggingface-cli download facebook/nllb-200-distilled-600M \
+  --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/translator \
+  --include "*.safetensors" "*.bin" "*.json" "*.txt" "*.model"
+
+#Voice Cloning
+huggingface-cli download fishaudio/s2-pro \
+  --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/fish_tts \
+  --include "*.safetensors" "*.json" "*.pth" "*.jinja" "*.model" "*.txt"
+
+#Lip Sync
+huggingface-cli download kevinwang676/MuseTalk1.5 \
+    --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/musetalk \
+    --include "*.pt" "*.pth" "*.bin" "*.safetensors" "*.json" \
+    --max-workers 1
