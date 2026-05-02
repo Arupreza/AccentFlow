@@ -7,7 +7,7 @@ services:
     depends_on:
       - translator
       - fish_tts
-      - latentsync
+      - musetalk
     volumes:
       - ./storage:/app/storage
 
@@ -44,12 +44,12 @@ services:
               count: 1
               capabilities: [gpu]
 
-  latentsync:
-    build: ./services/latentsync
+  musetalk:
+    build: ./services/musetalk
     ports:
       - "8004:8004"
     volumes:
-      - ./checkpoints/latentsync:/app/checkpoints
+      - ./checkpoints/musetalk:/app/checkpoints
       - ./storage:/app/storage
     deploy:
       resources:

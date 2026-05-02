@@ -220,7 +220,7 @@ Data/RezaPapers
 checkpoints/checker/
 checkpoints/fish_tts/
 checkpoints/grammarly/
-checkpoints/latentsync/
+checkpoints/musetalk
 checkpoints/translator/
 checkpoints/whisper/
 storage/
