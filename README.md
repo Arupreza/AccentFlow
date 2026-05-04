@@ -1,11 +1,12 @@
 # AccentFlow
 
-> **Agentic AI pipeline that transforms accented English video into lip-synced, grammatically corrected, multi-language video — preserving the original speaker's voice.**
+> **Agentic AI pipeline that transforms accented English video into lip-synced, grammatically corrected, multi-language video — preserving the original speaker's voice. Powered by a LangGraph reflection agent that self-validates output quality.**
 
 [![Python](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1.0-red.svg)](https://pytorch.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docs.docker.com/compose/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Reflection-purple.svg)](https://langchain-ai.github.io/langgraph/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -14,53 +15,184 @@
 
 AccentFlow takes a video of a non-native English speaker and produces a polished output where:
 
-1. **Speech is transcribed** using OpenAI Whisper
+1. **Speech is transcribed** using OpenAI Whisper-Large-v3-Turbo
 2. **Grammar is corrected** using Grammarly's CoEdit-Large
-3. **Grammatical quality is scored** using BERT-CoLA
+3. **Grammatical quality is scored** using BERT-CoLA (reflection loop)
 4. **Text is translated** to target language using Meta's NLLB-200
-5. **Voice is cloned** to speak the new text in the original speaker's voice (Fish-Speech S2-Pro)
-6. **Lips are re-synced** to match the new audio (ByteDance LatentSync)
+5. **Voice is cloned** to speak new text in original speaker's voice (Fish-Speech S2-Pro)
+6. **Lips are re-synced** to match new audio (MuseTalk v1.5)
+
+A LangGraph-based reflection agent orchestrates the pipeline, automatically retrying grammar correction until quality threshold (≥ 0.9 score) is met.
 
 Result: a video where the original speaker appears to fluently speak corrected/translated content in their own voice.
 
 ---
 
-## Architecture
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     AccentFlow Microservices                    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                      AccentFlow Microservices                        │
+└──────────────────────────────────────────────────────────────────────┘
 
-         ┌──────────────────────┐
-         │     Orchestrator     │  port 8000
-         │   (LangGraph Agent)  │  no GPU
-         └──────────┬───────────┘
-                    │
-        ┌───────────┼───────────────────┐
-        │           │                   │
-        ▼           ▼                   ▼
-┌─────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Translator  │ │  Fish-TTS    │ │ LatentSync   │
-│  port 8005  │ │  port 8003   │ │  port 8004   │
-│  CUDA 11.8  │ │  CUDA 11.8   │ │  CUDA 11.8   │
-├─────────────┤ ├──────────────┤ ├──────────────┤
-│ Whisper     │ │ S2-Pro       │ │ LatentSync   │
-│ CoEdit      │ │ DualAR       │ │ UNet 5GB     │
-│ CoLA        │ │ DAC Decoder  │ │ SyncNet      │
-│ NLLB-200    │ │              │ │ Aux models   │
-└─────────────┘ └──────────────┘ └──────────────┘
-        │           │                   │
-        └───────────┼───────────────────┘
-                    │
-                    ▼
-        ┌──────────────────────┐
-        │    Shared Storage    │
-        │   (host volume)      │
-        └──────────────────────┘
+         ┌────────────────────────────────┐
+         │       Orchestrator             │  port 8000
+         │   (LangGraph Reflection Agent) │  no GPU
+         │                                │
+         │   - Workflow state management  │
+         │   - Reflection loop control    │
+         │   - Service coordination       │
+         └─────────────┬──────────────────┘
+                       │
+        ┌──────────────┼─────────────────┐
+        │              │                 │
+        ▼              ▼                 ▼
+┌─────────────┐  ┌──────────────┐  ┌──────────────┐
+│ Translator  │  │  Fish-TTS    │  │  MuseTalk    │
+│  port 8005  │  │  port 8003   │  │  port 8004   │
+│  CUDA 11.8  │  │  CUDA 11.8   │  │  CUDA 11.8   │
+├─────────────┤  ├──────────────┤  ├──────────────┤
+│ Whisper     │  │ S2-Pro       │  │ MuseTalk v1.5│
+│ CoEdit      │  │ DualAR       │  │ UNet 3.4GB   │
+│ CoLA        │  │ DAC Decoder  │  │ SD-VAE       │
+│ NLLB-200    │  │              │  │ DWPose       │
+│             │  │              │  │ Face-Parse   │
+└─────────────┘  └──────────────┘  └──────────────┘
+        │              │                 │
+        └──────────────┼─────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │      Shared Storage          │
+        │   (host volume mount)        │
+        └──────────────────────────────┘
 ```
 
 Each service runs in its own Docker container with isolated CUDA runtime, independent scaling, and clean failure boundaries.
+
+---
+
+## Reflection Agent Flow
+
+The orchestrator implements a self-improving pipeline using LangGraph's conditional state machine:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                  Agent Pipeline (LangGraph)                      │
+└──────────────────────────────────────────────────────────────────┘
+
+                        ┌─────────────────┐
+                        │   Video Input   │
+                        │   (.mp4 file)   │
+                        └────────┬────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │ Extract Audio   │  → translator
+                        │ (ffmpeg)        │   /extract_audio
+                        └────────┬────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │   Transcribe    │  → translator
+                        │   (Whisper)     │   /transcribe
+                        └────────┬────────┘
+                                 │
+                                 ▼
+                ┌─────────────────────────────┐
+                │      Correct Grammar        │  ◄────────┐
+                │      (CoEdit-Large)         │           │
+                │      iteration += 1         │           │
+                └────────────┬────────────────┘           │
+                             │                            │
+                             ▼                            │
+                ┌─────────────────────────────┐           │
+                │     Check Grammar Score     │           │
+                │     (BERT-CoLA)             │           │
+                │     score = softmax(logits) │           │
+                └────────────┬────────────────┘           │
+                             │                            │
+                             ▼                            │
+                      ┌──────────────┐                    │
+                      │  Reflection  │                    │
+                      │   Decision   │                    │
+                      └──────┬───────┘                    │
+                             │                            │
+                ┌────────────┼────────────┐               │
+                │            │            │               │
+                ▼            ▼            ▼               │
+         ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+         │ score    │ │ score    │ │ iter ≥   │           │
+         │ ≥ 0.9    │ │ < 0.9    │ │ max      │           │
+         │  ✓       │ │  retry   │ │  ✗ stop  │           │
+         └────┬─────┘ └────┬─────┘ └────┬─────┘           │
+              │            │            │                 │
+              │            └────────────┼─────────────────┘
+              │                         │   (loop back)
+              ▼                         ▼
+         ┌──────────────────────────────────┐
+         │         Finalize                 │
+         │  Return text, score, history     │
+         └──────────────┬───────────────────┘
+                        │
+                        ▼
+         ┌──────────────────────────────────┐
+         │  Optional: Voice Clone (Fish-TTS)│
+         │  Optional: Lip Sync (MuseTalk)   │
+         └──────────────┬───────────────────┘
+                        │
+                        ▼
+                 ┌────────────┐
+                 │  Output    │
+                 │ Video/Text │
+                 └────────────┘
+```
+
+### Reflection Loop Behavior
+
+| Iteration | Score | Action |
+|---|---|---|
+| 1 | 0.65 | Retry → re-correct |
+| 2 | 0.83 | Retry → re-correct |
+| 3 | 0.94 | ✓ Finalize (above threshold) |
+
+If max iterations reached without convergence → returns best attempt with `is_acceptable: false`.
+
+---
+
+## End-to-End Data Flow
+
+```
+INPUT
+  └─ video.mp4 (speaker with accented English)
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│  Orchestrator: POST /process                │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ├─► extract_audio (ffmpeg) ──► storage/{id}_audio.wav
+                   │
+                   ├─► transcribe (Whisper) ─────► "He don't like apples..."
+                   │
+                   ├─► correct (CoEdit) ─────────► "He doesn't like apples..."
+                   │       ▲                      │
+                   │       │                      ▼
+                   │       │                check (CoLA) ──► score: 0.85
+                   │       │                                 │
+                   │       │     score < 0.9 ◄───────────────┤
+                   │       └─────retry (max 3)               │
+                   │                                         ▼
+                   │                                    score: 0.94 ✓
+                   │
+                   ▼
+           Output: corrected text + score + history
+
+OPTIONAL EXTENSIONS (manual via individual endpoints)
+  ├─► translate (NLLB-200)  ─────► Korean/Japanese/etc text
+  ├─► tts (Fish-TTS S2-Pro) ─────► cloned voice .wav
+  └─► sync (MuseTalk v1.5)  ─────► lip-synced .mp4
+```
 
 ---
 
@@ -68,20 +200,22 @@ Each service runs in its own Docker container with isolated CUDA runtime, indepe
 
 | Layer | Technology |
 |---|---|
-| **Models** | Whisper-Large-v3-Turbo, CoEdit-Large, BERT-CoLA, NLLB-200, Fish-Speech S2-Pro, LatentSync v1.6 |
+| **Models** | Whisper-Large-v3-Turbo, CoEdit-Large, BERT-CoLA, NLLB-200, Fish-Speech S2-Pro, MuseTalk v1.5 |
 | **Frameworks** | PyTorch 2.1, Transformers 4.44, FastAPI, LangGraph |
+| **Agent** | LangGraph StateGraph with conditional reflection edges |
 | **Infrastructure** | Docker Compose, NVIDIA Container Toolkit, CUDA 11.8 |
 | **Language** | Python 3.10 |
 | **API Format** | REST (JSON) for translator/orchestrator, MessagePack for Fish-TTS |
+| **Inter-service** | httpx async clients, shared volume mounts |
 
 ---
 
 ## Prerequisites
 
 ### Hardware
-- **GPU:** NVIDIA with ≥ 16GB VRAM (24GB+ recommended for running all services together)
-- **RAM:** 32GB+ system memory
-- **Storage:** 80GB+ for models and Docker images
+- **GPU:** NVIDIA with ≥ 16 GB VRAM (24 GB+ recommended for parallel services)
+- **RAM:** 32 GB+ system memory
+- **Storage:** 80 GB+ for models and Docker images
 
 ### Software
 - Ubuntu 20.04 / 22.04
@@ -110,15 +244,22 @@ docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
 ```
 AccentFlow-0.2/
 │
-├── checkpoints/              ← Model weights (host-only, not committed)
-│   ├── whisper/              Whisper-Large-v3-Turbo
-│   ├── grammarly/            CoEdit-Large
-│   ├── checker/              BERT-CoLA (grammar scorer)
-│   ├── translator/           NLLB-200-distilled-600M
-│   ├── fish_tts/             Fish-Speech S2-Pro
-│   └── latentsync/           LatentSync v1.6
+├── checkpoints/                  ← Model weights (host-only, not committed)
+│   ├── whisper/                  Whisper-Large-v3-Turbo
+│   ├── grammarly/                CoEdit-Large
+│   ├── checker/                  BERT-CoLA (grammar scorer)
+│   ├── translator/               NLLB-200-distilled-600M
+│   ├── fish_tts/                 Fish-Speech S2-Pro
+│   └── musetalk/                 MuseTalk v1.5
+│       └── models/
+│           ├── musetalk/
+│           ├── musetalkV15/
+│           ├── sd-vae-ft-mse/
+│           ├── whisper/
+│           ├── dwpose/
+│           └── face-parse-bisent/
 │
-├── storage/                  ← Shared runtime files (videos, audio)
+├── storage/                      ← Shared runtime files
 │
 ├── services/
 │   ├── translator/
@@ -133,18 +274,20 @@ AccentFlow-0.2/
 │   │       └── translator_model.py
 │   │
 │   ├── fish_tts/
-│   │   └── Dockerfile        ← Runs Fish-Speech's official server
+│   │   └── Dockerfile            ← Runs Fish-Speech's official server
 │   │
-│   └── latentsync/
+│   └── musetalk/
 │       ├── Dockerfile
 │       ├── api.py
 │       └── requirements.txt
 │
-├── orchestrator/             ← LangGraph multi-agent pipeline
+├── orchestrator/                 ← LangGraph reflection agent
 │   ├── Dockerfile
-│   ├── main.py
-│   ├── agent.py
-│   └── state.py
+│   ├── main.py                   FastAPI entry point
+│   ├── agent.py                  LangGraph workflow
+│   ├── state.py                  Pipeline state schema
+│   ├── tools.py                  HTTP service clients
+│   └── requirements.txt
 │
 ├── shared/
 │   └── schemas.py
@@ -170,7 +313,6 @@ git checkout AccentFlow-Beta
 Models are NOT committed to Git (too large). Download separately:
 
 ```bash
-# Authenticate with HuggingFace (required for some models)
 huggingface-cli login
 
 # Whisper-Large-v3-Turbo
@@ -193,18 +335,19 @@ huggingface-cli download facebook/nllb-200-distilled-600M \
     --local-dir checkpoints/translator \
     --include "*.safetensors" "*.bin" "*.json" "*.txt" "*.model"
 
-# Fish-TTS S2-Pro (gated — request access first at huggingface.co/fishaudio/s2-pro)
+# Fish-TTS S2-Pro (gated — request access at huggingface.co/fishaudio/s2-pro)
 huggingface-cli download fishaudio/s2-pro \
     --local-dir checkpoints/fish_tts \
     --include "*.safetensors" "*.json" "*.pth" "*.jinja" "*.model" "*.txt"
 
-# LatentSync v1.6
-huggingface-cli download ByteDance/LatentSync-1.6 \
-    --local-dir checkpoints/latentsync \
-    --include "*.pt" "*.pth" "*.bin" "*.safetensors" "*.json"
+# MuseTalk v1.5 (community fork by kevinwang676)
+huggingface-cli download kevinwang676/MuseTalk1.5 \
+    --local-dir checkpoints/musetalk \
+    --include "*.pt" "*.pth" "*.bin" "*.safetensors" "*.json" \
+    --max-workers 1
 ```
 
-**Total download size: ~25 GB**. Use `nohup` for long downloads over SSH:
+**Total download size: ~26 GB**. For long downloads over SSH:
 ```bash
 nohup huggingface-cli download <repo> --local-dir <path> > download.log 2>&1 &
 tail -f download.log
@@ -217,21 +360,25 @@ tail -f download.log
 docker compose build
 
 # Or build individually (recommended for first time)
+docker compose build orchestrator   # ~2 min
 docker compose build translator     # ~15 min
 docker compose build fish_tts       # ~25 min
-docker compose build latentsync     # ~30 min
+docker compose build musetalk       # ~30 min
 ```
 
 ### 4. Start Services
 
 ```bash
-# Start individually based on what you need
-docker compose up -d translator
-docker compose up -d fish_tts
-docker compose up -d latentsync
+# Start orchestrator + translator (typical reflection workflow)
+docker compose up -d translator orchestrator
 
-# Or start everything together (requires 24GB+ VRAM)
-docker compose up -d
+# Add fish_tts for voice cloning
+docker compose stop translator
+docker compose up -d fish_tts
+
+# Add musetalk for lip-sync
+docker compose stop fish_tts
+docker compose up -d musetalk
 
 # Verify
 docker ps
@@ -240,32 +387,58 @@ docker ps
 ### 5. Health Checks
 
 ```bash
+curl http://localhost:8000/health    # Orchestrator
 curl http://localhost:8005/health    # Translator
 curl http://localhost:8003/v1/health 2>&1 | head -5  # Fish-TTS
-curl http://localhost:8004/health    # LatentSync
+curl http://localhost:8004/health    # MuseTalk
 ```
 
 ---
 
 ## API Reference
 
-### Translator Service (port 8005)
+### Orchestrator Service (port 8000)
 
-#### `POST /transcribe`
-Transcribe audio/video file to text using Whisper.
+#### `POST /process`
+Run full reflection pipeline on uploaded video.
 
 ```python
 import requests
 
+with open("video.mp4", "rb") as f:
+    r = requests.post(
+        "http://localhost:8000/process",
+        files={"video": f},
+        data={"max_iterations": "3"},
+        timeout=600
+    )
+
+result = r.json()
+# {
+#   "job_id"          : "...",
+#   "transcript"      : "He don't like apples...",
+#   "final_text"      : "He doesn't like apples...",
+#   "grammar_score"   : 0.94,
+#   "is_acceptable"   : true,
+#   "iterations_used" : 1,
+#   "max_iterations"  : 3,
+#   "audio_path"      : "/app/storage/.../audio.wav",
+#   "history"         : [...]
+# }
+```
+
+---
+
+### Translator Service (port 8005)
+
+#### `POST /transcribe`
+```python
 r = requests.post("http://localhost:8005/transcribe", json={
     "audio_path": "/app/storage/input.mp4"
 })
-# Response: {"transcript": "..."}
 ```
 
 #### `POST /correct`
-Fix grammar using CoEdit-Large.
-
 ```python
 r = requests.post("http://localhost:8005/correct", json={
     "text": "He don't like apples"
@@ -274,8 +447,6 @@ r = requests.post("http://localhost:8005/correct", json={
 ```
 
 #### `POST /check`
-Score grammatical acceptability using BERT-CoLA.
-
 ```python
 r = requests.post("http://localhost:8005/check", json={
     "text": "She goes to school every day."
@@ -284,15 +455,12 @@ r = requests.post("http://localhost:8005/check", json={
 ```
 
 #### `POST /translate`
-Translate text using NLLB-200.
-
 ```python
 r = requests.post("http://localhost:8005/translate", json={
     "text": "Hello, how are you?",
     "source_lang": "eng_Latn",
     "target_lang": "kor_Hang"
 })
-# Response: {"translated": "안녕하세요, 어떻게 지내세요?"}
 ```
 
 **Supported language codes:**
@@ -306,17 +474,12 @@ r = requests.post("http://localhost:8005/translate", json={
 | Hindi | hin_Deva | Arabic | arb_Arab |
 
 #### `POST /extract_audio`
-Extract audio track from video file (returns WAV).
-
 ```python
 with open("video.mp4", "rb") as f:
     r = requests.post(
         "http://localhost:8005/extract_audio",
         files={"file": f}
     )
-
-with open("audio.wav", "wb") as out:
-    out.write(r.content)
 ```
 
 ---
@@ -326,13 +489,10 @@ with open("audio.wav", "wb") as out:
 Uses Fish-Speech's official MessagePack API.
 
 #### `POST /v1/tts`
-Synthesize speech with optional voice cloning.
-
 ```python
 import requests
 import ormsgpack
 
-# Voice cloning (recommended)
 with open("reference.wav", "rb") as f:
     ref_audio = f.read()
 
@@ -346,7 +506,6 @@ payload = {
     "max_new_tokens": 1024,
     "chunk_length": 200,
     "top_p": 0.7,
-    "repetition_penalty": 1.2,
     "temperature": 0.7,
     "streaming": False
 }
@@ -357,105 +516,90 @@ r = requests.post(
     data=ormsgpack.packb(payload),
     timeout=600
 )
-
-with open("output.wav", "wb") as f:
-    f.write(r.content)
 ```
 
 **Reference audio requirements:**
 - Format: 22050 Hz mono WAV
 - Duration: 5–30 seconds
-- Quality: Clean speech, minimal background noise
-- Reference text MUST match audio exactly (use `/transcribe` to get accurate text)
+- Quality: clean speech, minimal background noise
+- Reference text MUST match audio exactly
 
 ---
 
-### LatentSync Service (port 8004)
+### MuseTalk Service (port 8004)
 
 #### `POST /sync`
-Generate lip-synced video from input video + audio.
-
 ```python
 import requests
 
 with open("video.mp4", "rb") as v, open("audio.wav", "rb") as a:
     r = requests.post(
         "http://localhost:8004/sync",
-        files={"video": v, "audio": a},
-        timeout=900
+        files = {"video": v, "audio": a},
+        data  = {
+            "bbox_shift"  : "0",
+            "fps"         : "25",
+            "use_float16" : "true"
+        },
+        timeout = 900
     )
-
-with open("synced_video.mp4", "wb") as f:
-    f.write(r.content)
 ```
 
 **Requirements:**
 - Front-facing visible face in video
 - Audio length ≥ video length
-- Recommended video duration: 5–30 seconds
-- VRAM: ~12 GB during inference
+- Recommended duration: 5–30 seconds
+- VRAM: ~10 GB during inference
 
 ---
 
 ## Full Pipeline Example
 
-End-to-end usage in Jupyter:
-
 ```python
 import requests
 import ormsgpack
 import torchaudio
+import shutil
 
-# ─── Setup ───
 INPUT_VIDEO = "/path/to/input.mp4"
 TARGET_LANG = "kor_Hang"
 
-# ─── 1. Extract audio from input video ───
+# ─── 1. Run reflection pipeline (transcribe → correct → check) ───
 with open(INPUT_VIDEO, "rb") as f:
     r = requests.post(
-        "http://localhost:8005/extract_audio",
-        files={"file": f}
+        "http://localhost:8000/process",
+        files={"video": f},
+        data={"max_iterations": "3"},
+        timeout=600
     )
-with open("storage/extracted.wav", "wb") as out:
-    out.write(r.content)
+result = r.json()
+corrected = result["final_text"]
+print(f"Corrected (score {result['grammar_score']:.3f}): {corrected}")
 
-# ─── 2. Resample reference audio for Fish-TTS ───
-waveform, sr = torchaudio.load("storage/extracted.wav")
-if sr != 22050:
-    waveform = torchaudio.transforms.Resample(sr, 22050)(waveform)
-torchaudio.save("storage/reference_22k.wav", waveform[:, :22050*20], 22050)
-
-# ─── 3. Transcribe ───
-r = requests.post("http://localhost:8005/transcribe",
-    json={"audio_path": "/app/storage/reference_22k.wav"})
-transcript = r.json()["transcript"]
-print("Original:", transcript)
-
-# ─── 4. Correct grammar ───
-r = requests.post("http://localhost:8005/correct", json={"text": transcript})
-corrected = r.json()["corrected"]
-print("Corrected:", corrected)
-
-# ─── 5. Score quality ───
-r = requests.post("http://localhost:8005/check", json={"text": corrected})
-print("Grammar score:", r.json())
-
-# ─── 6. Translate ───
+# ─── 2. Translate ───
 r = requests.post("http://localhost:8005/translate", json={
     "text": corrected,
     "source_lang": "eng_Latn",
     "target_lang": TARGET_LANG
 })
 translated = r.json()["translated"]
-print("Translated:", translated)
 
-# ─── 7. Voice clone synthesis ───
+# ─── 3. Extract reference audio for voice clone ───
+audio_path = result["audio_path"]
+shutil.copy(audio_path, "storage/reference.wav")
+
+waveform, sr = torchaudio.load("storage/reference.wav")
+if sr != 22050:
+    waveform = torchaudio.transforms.Resample(sr, 22050)(waveform)
+torchaudio.save("storage/reference_22k.wav", waveform[:, :22050*20], 22050)
+
+# ─── 4. Voice clone with translated text ───
 with open("storage/reference_22k.wav", "rb") as f:
     ref_audio = f.read()
 
 payload = {
     "text": translated,
-    "references": [{"audio": ref_audio, "text": transcript}],
+    "references": [{"audio": ref_audio, "text": result["transcript"]}],
     "format": "wav",
     "max_new_tokens": 1024,
     "chunk_length": 200,
@@ -472,11 +616,12 @@ r = requests.post(
 with open("storage/cloned_voice.wav", "wb") as f:
     f.write(r.content)
 
-# ─── 8. Lip-sync ───
+# ─── 5. Lip-sync ───
 with open(INPUT_VIDEO, "rb") as v, open("storage/cloned_voice.wav", "rb") as a:
     r = requests.post(
         "http://localhost:8004/sync",
         files={"video": v, "audio": a},
+        data={"bbox_shift": "0", "fps": "25", "use_float16": "true"},
         timeout=900
     )
 with open("final_output.mp4", "wb") as f:
@@ -491,11 +636,26 @@ print("Done. Output: final_output.mp4")
 
 | Service | VRAM | First inference | Subsequent | Disk |
 |---|---|---|---|---|
+| Orchestrator | 0 GB | <1s | <1s | ~135 MB |
 | Translator | ~8 GB | ~30s | ~3-10s | ~12 GB |
-| Fish-TTS | ~10 GB | ~60s | ~5-15s | ~12 GB |
-| LatentSync | ~12 GB | ~5min | ~30s-3min | ~10 GB |
+| Fish-TTS | ~10 GB | ~60s | ~5-15s | ~16 GB |
+| MuseTalk | ~10 GB | ~3 min | ~1-3 min | ~12 GB |
 
-**Running all 3 simultaneously requires 24 GB+ VRAM.** On smaller GPUs, run sequentially.
+**Running all 3 GPU services simultaneously requires 28+ GB VRAM.** On smaller GPUs (16-24 GB), run sequentially via service swapping:
+
+```bash
+docker compose stop fish_tts musetalk
+docker compose up -d translator orchestrator
+# Run reflection pipeline
+# ...
+docker compose stop translator
+docker compose up -d fish_tts
+# Run voice clone
+# ...
+docker compose stop fish_tts
+docker compose up -d musetalk
+# Run lip sync
+```
 
 ---
 
@@ -503,7 +663,6 @@ print("Done. Output: final_output.mp4")
 
 ### CUDA Out of Memory
 ```bash
-# Stop one service to free VRAM
 docker compose stop translator
 nvidia-smi   # verify freed
 docker compose up -d fish_tts
@@ -511,23 +670,21 @@ docker compose up -d fish_tts
 
 ### Container Won't Start
 ```bash
-# View logs to diagnose
 docker compose logs <service_name> --tail 50
 
 # Common causes:
-# - Empty Python files (VS Code save issue) — verify with: ls -lh services/<name>/
-# - Missing model checkpoints — verify with: ls checkpoints/<name>/
-# - Port conflict — check: ss -tlnp | grep 8005
+# - Empty Python files (VS Code save issue): ls -lh services/<name>/
+# - Missing model checkpoints: ls checkpoints/<name>/
+# - Port conflict: ss -tlnp | grep <port>
 ```
 
 ### Model Download Fails
 ```bash
-# Re-authenticate
 huggingface-cli logout
 huggingface-cli login
 
-# Resume interrupted download (huggingface-cli auto-resumes)
-nohup huggingface-cli download <repo> --local-dir <path> > download.log 2>&1 &
+# Resume with single thread (avoids race conditions)
+huggingface-cli download <repo> --local-dir <path> --max-workers 1
 ```
 
 ### Fish-TTS Decoder Config Error
@@ -535,6 +692,23 @@ nohup huggingface-cli download <repo> --local-dir <path> > download.log 2>&1 &
 Use --decoder-config-name modded_dac_vq, NOT firefly_gan_vq.
 The firefly_gan_vq config is from older Fish-Speech v1.4 docs.
 v2.0.0+ uses modded_dac_vq for S2-Pro architecture.
+```
+
+### MuseTalk pkg_resources Error
+```
+Error: ModuleNotFoundError: No module named 'pkg_resources'
+
+Cause: setuptools 80+ removed pkg_resources module.
+Fix: Pin to setuptools<80 in Dockerfile.
+```
+
+### MuseTalk VAE Path Mismatch
+```
+Error: Repository Not Found for url: .../models/sd-vae/...
+
+Cause: MuseTalk expects "sd-vae" folder but checkpoints have "sd-vae-ft-mse".
+Fix: api.py creates a symlink at startup:
+  os.symlink("/opt/MuseTalk/models/sd-vae-ft-mse", "/opt/MuseTalk/models/sd-vae")
 ```
 
 ---
@@ -546,7 +720,9 @@ v2.0.0+ uses modded_dac_vq for S2-Pro architecture.
 1. Create `services/<name>/` directory with Dockerfile, api.py, requirements.txt
 2. Add service block to `docker-compose.yml`
 3. Mount required checkpoint volumes
-4. Build & test:
+4. Update orchestrator's `tools.py` with HTTP client for new service
+5. Add LangGraph node in `agent.py` if part of pipeline
+6. Build & test:
    ```bash
    docker compose build <name>
    docker compose up -d <name>
@@ -555,9 +731,8 @@ v2.0.0+ uses modded_dac_vq for S2-Pro architecture.
 ### Modifying API Code
 
 ```bash
-# Code is baked into image via COPY — rebuild required
 docker compose down <service>
-docker compose build <service>
+docker compose build <service>     # Code is baked via COPY
 docker compose up -d <service>
 ```
 
@@ -567,6 +742,29 @@ Checkpoints are mounted as volumes — no rebuild needed:
 ```bash
 # Replace files in checkpoints/<name>/
 docker compose restart <service>
+```
+
+### Extending The Reflection Agent
+
+The reflection loop is defined in `orchestrator/agent.py`. Add new quality checks:
+
+```python
+async def node_check_semantic(state):
+    """Check if corrected text preserves original meaning."""
+    similarity = await tools.compute_similarity(
+        state["transcript"],
+        state["corrected"]
+    )
+    return {**state, "semantic_score": similarity}
+
+# Add to graph
+workflow.add_node("check_semantic", node_check_semantic)
+workflow.add_edge("check", "check_semantic")
+workflow.add_conditional_edges(
+    "check_semantic",
+    lambda s: "retry" if s["semantic_score"] < 0.85 else "finalize",
+    {"retry": "correct", "finalize": "finalize"}
+)
 ```
 
 ---
@@ -581,7 +779,7 @@ This project uses third-party models with their own licenses:
 - BERT-CoLA (MIT)
 - NLLB-200 (CC BY-NC 4.0 — non-commercial)
 - Fish-Speech (CC BY-NC-SA 4.0 — non-commercial)
-- LatentSync (Apache 2.0)
+- MuseTalk (MIT, via TMElyralab)
 
 **Note:** Several models are non-commercial. For commercial deployment, replace with appropriate alternatives.
 
@@ -593,19 +791,9 @@ This project uses third-party models with their own licenses:
 - Grammarly for CoEdit
 - Meta AI for NLLB-200
 - Fish Audio for Fish-Speech S2-Pro
-- ByteDance for LatentSync
+- TMElyralab for MuseTalk
 - HuggingFace for the model hub
-
----
-
-## Contact
-
-**Md Rezanur Islam (Reza)**
-LLM Engineer & Agentic AI Developer
-PhD Candidate, Soonchunhyang University
-
-- Website: [a2zai.xyz](https://a2zai.xyz)
-- GitHub: [@Arupreza](https://github.com/Arupreza)
+- LangChain team for LangGraph
 
 ---
 
@@ -615,8 +803,8 @@ If you use this work in research:
 
 ```bibtex
 @software{accentflow2026,
-  author  = {Islam, Md Rezanur},
-  title   = {AccentFlow: Agentic AI Pipeline for Accent-Adaptive Video Synthesis},
+  author  = {Md Rezanur Islam, Kangbin Yim},
+  title   = {AccentFlow: Agentic AI Pipeline for Accent-Adaptive Video Synthesis with Reflection-Based Quality Control},
   year    = {2026},
   url     = {https://github.com/Arupreza/AccentFlow}
 }

@@ -15,9 +15,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e ".[stable]"
 
 CMD ["python", "tools/api_server.py", \
-     "--listen", "0.0.0.0:8003", \
-     "--llama-checkpoint-path", "/app/checkpoints", \
-     "--decoder-checkpoint-path", "/app/checkpoints/codec.pth", \
-     "--decoder-config-name", "modded_dac_vq", \
-     "--half", \
-     "--compile"]
+    "--listen", "0.0.0.0:8003", \
+    "--llama-checkpoint-path", "/app/checkpoints", \
+    "--decoder-checkpoint-path", "/app/checkpoints/codec.pth", \
+    "--decoder-config-name", "modded_dac_vq", \
+    "--half", \
+    "--compile"]
