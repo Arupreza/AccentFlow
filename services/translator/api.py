@@ -1,11 +1,11 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from schemas import TranscribeRequest, GrammarRequest, CheckerRequest, TranslatorRequest
 from models.whisper_model import WhisperModel
 from models.grammar_model import GrammarModel
 from models.checker_model import CheckerModel
 from models.translator_model import TranslatorModel
-import shutil, uuid, subprocess
+import shutil, uuid, subprocess, os
 
 app = FastAPI()
 
@@ -23,7 +23,13 @@ def health():
 
 @app.post("/transcribe")
 def transcribe(req: TranscribeRequest):
-    return {"transcript": whisper.transcribe(req.audio_path)}
+    if not os.path.exists(req.audio_path):
+        raise HTTPException(status_code=404, detail=f"Audio file not found: {req.audio_path}")
+    try:
+        transcript = whisper.transcribe(req.audio_path)
+        return {"transcript": transcript}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 
 @app.post("/correct")

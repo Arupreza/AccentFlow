@@ -21,15 +21,21 @@ async def extract_audio(video_path: str) -> str:
 
 
 async def transcribe(audio_path: str) -> str:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        # Convert host path to container path (storage is shared)
-        container_path = audio_path.replace("/app/storage", "/app/storage")
-        r = await client.post(
-            f"{TRANSLATOR_URL}/transcribe",
-            json={"audio_path": container_path}
-        )
-        r.raise_for_status()
-        return r.json()["transcript"]
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            r = await client.post(
+                f"{TRANSLATOR_URL}/transcribe",
+                json={"audio_path": audio_path}
+            )
+            r.raise_for_status()
+            return r.json()["transcript"]
+
+    except httpx.TimeoutException:
+        raise RuntimeError(f"Transcription service timed out after {TIMEOUT}s")
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(f"Transcription service error {e.response.status_code}: {e.response.text}")
+    except httpx.RequestError as e:
+        raise RuntimeError(f"Cannot reach transcription service: {str(e)}")
 
 
 async def correct_grammar(text: str) -> str:

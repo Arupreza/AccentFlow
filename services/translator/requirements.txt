@@ -1,7 +1,11 @@
 fastapi
-uvicorn
-transformers
+uvicorn[standard]
+python-multipart
+transformers==4.44.2
+accelerate==0.34.2
 torch
 openai-whisper
 sentencepiece
-accelerate
+librosa
+soundfile
+numpy

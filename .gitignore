@@ -223,4 +223,5 @@ checkpoints/grammarly/
 checkpoints/musetalk
 checkpoints/translator/
 checkpoints/whisper/
+checkpoints/whisper-nf4/
 storage/

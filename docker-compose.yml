@@ -12,22 +12,22 @@ services:
       - ./storage:/app/storage
 
   translator:
-    build: ./services/translator
-    ports:
-      - "8005:8005"
-    volumes:
-      - ./checkpoints/whisper:/app/checkpoints/whisper
-      - ./checkpoints/grammarly:/app/checkpoints/grammarly
-      - ./checkpoints/checker:/app/checkpoints/checker
-      - ./checkpoints/translator:/app/checkpoints/translator
-      - ./storage:/app/storage
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      build: ./services/translator
+      ports:
+        - "8005:8005"
+      volumes:
+        - ./checkpoints/whisper:/app/checkpoints/whisper
+        - ./checkpoints/grammarly:/app/checkpoints/grammarly
+        - ./checkpoints/checker:/app/checkpoints/checker
+        - ./checkpoints/translator:/app/checkpoints/translator
+        - ./storage:/app/storage
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
 
   fish_tts:
     build: ./services/fish_tts
