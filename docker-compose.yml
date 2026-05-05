@@ -20,9 +20,8 @@ services:
       - TRANSFORMERS_OFFLINE=1
       - HF_DATASETS_OFFLINE=1
     volumes:
-      # ── whisper: point to NF4 checkpoint, NOT the original float16 dir ──────
       - ./checkpoints/whisper-nf4:/app/checkpoints/whisper-nf4:ro
-      - ./checkpoints/grammarly:/app/checkpoints/grammarly
+      - ./checkpoints/grammarly/quantized:/app/checkpoints/grammarly/quantized:ro
       - ./checkpoints/checker:/app/checkpoints/checker
       - ./checkpoints/translator:/app/checkpoints/translator
       - ./storage:/app/storage
