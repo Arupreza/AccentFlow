@@ -28,8 +28,3 @@ huggingface-cli download kevinwang676/MuseTalk1.5 \
     --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/musetalk \
     --include "*.pt" "*.pth" "*.bin" "*.safetensors" "*.json" \
     --max-workers 1
-#VibeVoice-ASR
-huggingface-cli download microsoft/VibeVoice-ASR \
-    --local-dir /home/lisa/Arupreza/AccentFlow-0.2/checkpoints/VibeVoiceASR/Full \
-    --include "*.safetensors" "*.json" "*.txt" \
-    --max-workers 4

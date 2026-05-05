@@ -1,9 +1,7 @@
 import gc
-import os
-
+import torch
 import librosa
 import numpy as np
-import torch
 from transformers import (
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,
@@ -14,30 +12,30 @@ from transformers import (
 
 class WhisperModel:
     def __init__(self, model_path: str = "/app/checkpoints/whisper-nf4"):
-
-        # ── NF4 config — must match what quantize_whisper_nf4.py used ─────────
-        bnb_config = BitsAndBytesConfig(
+        self.model_path = model_path
+        self.bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_use_double_quant=True,
         )
+        self.processor = None
+        self.model = None
+        self.pipe = None
 
+    def _load(self):
         self.processor = AutoProcessor.from_pretrained(
-            model_path,
+            self.model_path,
             clean_up_tokenization_spaces=True,
-            local_files_only=True,      # never hits HuggingFace inside Docker
+            local_files_only=True,
         )
-
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_path,
-            quantization_config=bnb_config,
+            self.model_path,
+            quantization_config=self.bnb_config,
             device_map="auto",
             local_files_only=True,
         )
         self.model.eval()
-
-        # torch_dtype here is the pipeline's *compute* dtype — matches bnb_4bit_compute_dtype
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=self.model,
@@ -48,26 +46,32 @@ class WhisperModel:
         )
 
     def transcribe(self, audio_path: str) -> str:
-        audio, sr = librosa.load(audio_path, sr=16000, mono=True)
-        audio = audio.astype(np.float32)
+        self._load()
+        try:
+            audio, sr = librosa.load(audio_path, sr=16000, mono=True)
+            audio = audio.astype(np.float32)
 
-        result = self.pipe(
-            {"array": audio, "sampling_rate": sr},
-            return_timestamps=True,
-            chunk_length_s=30,
-            stride_length_s=5,
-        )
+            result = self.pipe(
+                {"array": audio, "sampling_rate": sr},
+                return_timestamps=True,
+                chunk_length_s=30,
+                stride_length_s=5,
+            )
 
-        del audio
-        gc.collect()
-        torch.cuda.empty_cache()
+            del audio
+            return result["text"]
 
-        return result["text"]
+        finally:
+            # fires whether transcription succeeds or raises an exception
+            self.unload()
 
     def unload(self):
         del self.pipe
         del self.model
         del self.processor
+        self.pipe = None
+        self.model = None
+        self.processor = None
         gc.collect()
         torch.cuda.empty_cache()
         print(

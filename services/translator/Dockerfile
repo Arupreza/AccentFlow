@@ -5,6 +5,11 @@ WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Seoul
 
+# ── Block all HuggingFace network calls — model is mounted from host ────────
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_DATASETS_OFFLINE=1
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
