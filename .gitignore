@@ -225,3 +225,4 @@ checkpoints/translator/
 checkpoints/whisper/
 checkpoints/whisper-nf4/
 storage/
+Quantization.ipynb
