@@ -1,25 +1,43 @@
-import torch
+import gc
+import os
+
 import librosa
 import numpy as np
-import gc
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+import torch
+from transformers import (
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
+    BitsAndBytesConfig,
+    pipeline,
+)
 
 
 class WhisperModel:
-    def __init__(self, model_path: str = "/app/checkpoints/whisper"):
-        # Explicitly define the parameter to suppress the warning
+    def __init__(self, model_path: str = "/app/checkpoints/whisper-nf4"):
+
+        # ── NF4 config — must match what quantize_whisper_nf4.py used ─────────
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+
         self.processor = AutoProcessor.from_pretrained(
             model_path,
-            clean_up_tokenization_spaces=True
+            clean_up_tokenization_spaces=True,
+            local_files_only=True,      # never hits HuggingFace inside Docker
         )
-        
+
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_path,
-            torch_dtype=torch.float16,
+            quantization_config=bnb_config,
             device_map="auto",
+            local_files_only=True,
         )
         self.model.eval()
 
+        # torch_dtype here is the pipeline's *compute* dtype — matches bnb_4bit_compute_dtype
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=self.model,
@@ -40,7 +58,6 @@ class WhisperModel:
             stride_length_s=5,
         )
 
-        # clear intermediate tensors after each call
         del audio
         gc.collect()
         torch.cuda.empty_cache()
@@ -48,15 +65,16 @@ class WhisperModel:
         return result["text"]
 
     def unload(self):
-        """Call when completely done with the model."""
         del self.pipe
         del self.model
         del self.processor
         gc.collect()
         torch.cuda.empty_cache()
-        print(f"VRAM freed — Allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB | Reserved: {torch.cuda.memory_reserved()/1e9:.2f} GB")
+        print(
+            f"VRAM freed — Allocated: {torch.cuda.memory_allocated()/1e9:.2f} GB"
+            f" | Reserved: {torch.cuda.memory_reserved()/1e9:.2f} GB"
+        )
 
-    # context manager support — auto unloads on exit
     def __enter__(self):
         return self
 

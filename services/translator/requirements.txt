@@ -9,3 +9,4 @@ sentencepiece
 librosa
 soundfile
 numpy
+bitsandbytes>=0.43.0
