@@ -10,6 +10,7 @@ services:
       - musetalk
     volumes:
       - ./storage:/app/storage
+      - ./orchestrator/app:/app/app          # live code sync
 
   translator:
     build: ./services/translator
@@ -21,10 +22,11 @@ services:
       - HF_DATASETS_OFFLINE=1
     volumes:
       - ./checkpoints/whisper-nf4:/app/checkpoints/whisper-nf4:ro
-      - ./checkpoints/grammarly/quantized:/app/checkpoints/grammarly/quantized:ro
+      - ./checkpoints/grammarly/full:/app/checkpoints/grammarly/full:ro
       - ./checkpoints/checker:/app/checkpoints/checker
       - ./checkpoints/translator:/app/checkpoints/translator
       - ./storage:/app/storage
+      - ./services/translator/app:/app/app   # live code sync
     deploy:
       resources:
         reservations:
@@ -40,6 +42,7 @@ services:
     volumes:
       - ./checkpoints/fish_tts:/app/checkpoints
       - ./storage:/app/storage
+      - ./services/fish_tts/app:/app/app     # live code sync
     deploy:
       resources:
         reservations:
@@ -55,6 +58,7 @@ services:
     volumes:
       - ./checkpoints/musetalk:/app/checkpoints
       - ./storage:/app/storage
+      - ./services/musetalk/app:/app/app     # live code sync
     deploy:
       resources:
         reservations:

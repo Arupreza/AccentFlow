@@ -1,24 +1,22 @@
 import gc
-import json
 import re
 from pathlib import Path
 
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 
+MAX_SENTENCES_PER_BATCH = 5
+
 
 class GrammarModel:
-    def __init__(self, model_path: str = "/app/checkpoints/grammarly/quantized"):
+    def __init__(self, model_path: str = "/app/checkpoints/grammarly/full"):
         ckpt = Path(model_path)
-
-        with open(ckpt / "quant_meta.json") as f:
-            meta = json.load(f)
 
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_quant_type=meta["quant_type"],
-            bnb_4bit_compute_dtype=getattr(torch, meta["compute_dtype"]),
-            bnb_4bit_use_double_quant=meta["double_quant"],
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -32,37 +30,73 @@ class GrammarModel:
             local_files_only=True,
         )
         self.model.eval()
+        self._warmup()
 
-    def _correct_sentence(self, sentence: str) -> str:
-        if not sentence.strip():
-            return sentence
-
-        inputs = self.tokenizer(
-            f"Fix grammatical errors in this sentence: {sentence}",
+    def _warmup(self):
+        dummy = self.tokenizer(
+            "Fix grammar: warmup.",
             return_tensors="pt",
-            max_length=256,
+            max_length=32,
             truncation=True,
         ).to("cuda")
+        with torch.no_grad():
+            self.model.generate(**dummy, max_new_tokens=8, num_beams=1, do_sample=False)
+        del dummy
+        torch.cuda.empty_cache()
+
+    def _correct_batch(self, sentences: list[str]) -> list[str]:
+        """Run one generate() call on a small batch of sentences."""
+        prompts = [f"Fix grammar: {s}" for s in sentences]
+
+        inputs = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            max_length=128,
+            truncation=True,
+            padding=True,
+        ).to("cuda")
+
+        input_token_count = inputs["input_ids"].shape[1]
+        dynamic_max_new_tokens = min(int(input_token_count * 1.2), 128)
 
         with torch.no_grad():
-            output = self.model.generate(
+            outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=256,
-                num_beams=4,
-                early_stopping=True,
+                max_new_tokens=dynamic_max_new_tokens,
+                num_beams=1,
+                do_sample=False,
+                repetition_penalty=1.3,
+                no_repeat_ngram_size=3,
             )
 
-        return self.tokenizer.decode(output[0], skip_special_tokens=True)
+        decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+        del inputs, outputs
+        torch.cuda.empty_cache()
+
+        return decoded
 
     def correct(self, text: str) -> str:
         sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        corrected = [self._correct_sentence(s) for s in sentences]
-        result = " ".join(corrected)
+
+        non_empty = [(i, s) for i, s in enumerate(sentences) if s.strip()]
+        if not non_empty:
+            return text
+
+        indices, valid_sentences = zip(*non_empty)
+
+        corrected_sentences = []
+        for i in range(0, len(valid_sentences), MAX_SENTENCES_PER_BATCH):
+            batch = valid_sentences[i: i + MAX_SENTENCES_PER_BATCH]
+            corrected_sentences.extend(self._correct_batch(list(batch)))
+
+        result_map = dict(zip(indices, corrected_sentences))
+        final = [result_map.get(i, sentences[i]) for i in range(len(sentences))]
 
         gc.collect()
         torch.cuda.empty_cache()
 
-        return result
+        return " ".join(final)
 
     def unload(self):
         del self.model

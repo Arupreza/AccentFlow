@@ -224,5 +224,16 @@ checkpoints/musetalk
 checkpoints/translator/
 checkpoints/whisper/
 checkpoints/whisper-nf4/
+checkpoints/t5_grammar/
+FineTuningModels/GrammarData/
+FineTuningModels/checkpoints/
+FineTuningModels/GrammarModel/
+FineTuningModels/best_model/
+ICITSI Keynote.mp4
 storage/
-Quantization.ipynb
+test_2.ipynbFineTuningModels/best_model/
+FineTuningModels/**/wandb/
+*.safetensors
+*.wav
+*.mp4
+*.save
